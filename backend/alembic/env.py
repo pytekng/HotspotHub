@@ -7,6 +7,7 @@ from alembic import context
 from backend.app.core.config import settings
 from backend.app.models.base import Base
 from backend.app.models.user import User
+from backend.app.models.plan import Plan
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
