@@ -7,11 +7,14 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 from backend.app.db.database import AsyncSessionLocal
 from backend.app.services.plan_service import PlanService
 from backend.app.services.purchase_service import PurchaseService
+from backend.app.services.payment_service import PaymentService
 from bot.services.user_service import save_telegram_user
 
 load_dotenv()
@@ -195,12 +198,106 @@ async def confirm_purchase(
             )
             return
 
+    context.user_data["pending_purchase_id"] = purchase.id
+
     await query.message.reply_text(
         f"✅ Purchase created successfully!\n\n"
         f"🧾 Purchase ID: {purchase.id}\n"
         f"💰 Amount: ₦{purchase.amount:,.2f}\n"
         f"📌 Status: {purchase.status}\n\n"
-        "Your payment is now pending."
+        "📧 Please enter your email address to continue with payment."
+    )
+async def receive_payment_email(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.message is None or update.effective_user is None:
+        return
+
+    email = update.message.text
+
+    if not email:
+        return
+
+    email = email.strip()
+
+    if "@" not in email or "." not in email:
+        await update.message.reply_text(
+            "❌ Please enter a valid email address.\n\n"
+            "Example: customer@example.com"
+        )
+        return
+
+    purchase_id = context.user_data.get(
+        "pending_purchase_id"
+    )
+
+    if purchase_id is None:
+        await update.message.reply_text(
+            "❌ Your purchase session has expired.\n\n"
+            "Please use /plans to start again."
+        )
+        return
+
+    async with AsyncSessionLocal() as session:
+
+        purchase_service = PurchaseService(session)
+
+        purchase = await purchase_service.get_purchase(
+            purchase_id
+        )
+
+        if purchase is None:
+            await update.message.reply_text(
+                "❌ We could not find your purchase.\n\n"
+                "Please use /plans to start again."
+            )
+            return
+
+        if purchase.status != "pending":
+            await update.message.reply_text(
+                "❌ This purchase is no longer pending."
+            )
+            return
+
+        payment_service = PaymentService(session)
+
+        try:
+            payment = await payment_service.initialize_payment(
+                purchase=purchase,
+                email=email,
+            )
+
+        except Exception:
+            await update.message.reply_text(
+                "❌ We could not initialize your payment.\n\n"
+                "Please try again later."
+            )
+            return
+
+    context.user_data.pop(
+        "pending_purchase_id",
+        None,
+    )
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text=f"💳 Pay ₦{purchase.amount:,.2f}",
+                url=payment["authorization_url"],
+            )
+        ]
+    ]
+
+    await update.message.reply_text(
+        f"💳 Payment Ready!\n\n"
+        f"🧾 Purchase ID: {purchase.id}\n"
+        f"💰 Amount: ₦{purchase.amount:,.2f}\n"
+        f"📌 Status: {purchase.status}\n\n"
+        "Click the button below to complete your payment.",
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
     )
 
 async def cancel_purchase(
@@ -253,6 +350,13 @@ def main():
         CallbackQueryHandler(
             cancel_purchase,
             pattern=r"^cancel_purchase$",
+        )
+    )
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            receive_payment_email,
         )
     )
 

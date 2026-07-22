@@ -74,3 +74,20 @@ class PurchaseRepository:
         await self.session.refresh(purchase)
 
         return purchase
+
+    async def update_payment_reference(
+        self,
+        purchase_id: int,
+        payment_reference: str,
+    ) -> Purchase | None:
+        purchase = await self.get_by_id(purchase_id)
+
+        if purchase is None:
+            return None
+
+        purchase.payment_reference = payment_reference
+
+        await self.session.commit()
+        await self.session.refresh(purchase)
+
+        return purchase

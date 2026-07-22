@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     bot_token: str
     database_url: str
     alembic_database_url: str
+    paystack_secret_key: str
 
     model_config = SettingsConfigDict(
         env_file=".env",

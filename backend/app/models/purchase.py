@@ -65,3 +65,9 @@ class Purchase(Base):
     plan: Mapped["Plan"] = relationship(
         "Plan",
     )
+    payment_reference: Mapped[str | None] = mapped_column(
+        String(100),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
